@@ -1,1 +1,1 @@
-
+sudo python gui.py
