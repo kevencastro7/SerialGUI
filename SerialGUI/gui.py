@@ -6,8 +6,8 @@ __author__ = 'kevencastro7'
 import commands
 import notify2
 import signal
+import socket
 import gi
-import serial
 gi.require_version('Gtk', '3.0')
 gi.require_version('Notify', '0.7')
 from gi.repository import Gtk, GObject, Gdk, Notify
@@ -35,7 +35,7 @@ class GraphicalUserInterface(MicroServiceBase):
             if type(app_object) != Gtk.Adjustment and type(app_object) != Gtk.CellRendererText:
                 widget_id = Gtk.Buildable.get_name(app_object)
                 self.app_objects[widget_id] = app_object
-        self.app_objects['MAIN_WINDOW'].set_title("Serial")
+        self.app_objects['MAIN_WINDOW'].set_title("ClienteTCP")
         self.app_objects['MAIN_WINDOW'].connect("delete-event", self.main_quit)
         self.app_objects['MAIN_WINDOW'].show()
 
@@ -77,24 +77,29 @@ class GraphicalUserInterface(MicroServiceBase):
 	if self.conectado:
 	    msg = self.app_objects['msg'].get_text() 
 	    try:
-		self.ser.write(msg)
+		self.tcp.send (msg)
+		self.gui_set_status('Última Mensagem: ' + msg )
 		self.gui_clear_msg()
 	    except:
-		print 'Erro ao enviar a mensagem'
+		self.gui_set_status('Erro ao enviar a mensagem')
 	else:
-	    print 'Não conectado'
+		self.gui_set_status('Nao Conectado')
 	
     """#############################################################################################################"""
     """########################################### GUI UPDATE FUNCTIONS ############################################"""
     """#############################################################################################################"""
 
     @gtk_thread_safe
-    def gui_set_status(self, text):
-        self.app_objects['status'].set_label(text)
+    def gui_set_bt_status(self, text):
+        self.app_objects['bt_status'].set_label(text)
 
     @gtk_thread_safe
     def gui_clear_msg(self):
         self.app_objects['msg'].set_text('')
+
+    @gtk_thread_safe
+    def gui_set_status(self, text):
+        self.app_objects['status'].set_text(text)
 
 
     """#############################################################################################################"""
@@ -105,34 +110,28 @@ class GraphicalUserInterface(MicroServiceBase):
         Gtk.main()
 
     @MicroServiceBase.task
-    def Serial(self):
+    def CLienteTCP(self):
 	while True:
 	    if self.connect:
-
+		HOST = self.app_objects['host'].get_text()     # Endereco IP do Servidor
+		PORT = 5000            # Porta que o Servidor esta
+		self.tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		dest = (HOST, PORT)
 		try:
-			print self.app_objects['host'].get_text() 
-			self.ser = serial.Serial(
-			       	port=self.app_objects['host'].get_text() ,
-			       	baudrate = 9600,
-			       	parity=serial.PARITY_NONE,
-			       	stopbits=serial.STOPBITS_ONE,
-			       	bytesize=serial.EIGHTBITS,
-			       	timeout=1
-			   	)
-			#self.ser.open()
+			self.tcp.connect(dest)
 			self.conectado = True
-			self.gui_set_status('Desconectar')
-			print 'Conectado com Sucesso'
+			self.gui_set_bt_status('Desconectar')
+			self.gui_set_status('Conectado com Sucesso')
 		except:
-			print 'Não foi possível conectar'
+			self.gui_set_status('Não foi possível conectar')
 		self.connect = False
 	    elif self.disconnect:
 		try:
-			self.ser.close()
+			self.tcp.close()
 			self.conectado = False
-			self.gui_set_status('Conectar')
-			print 'Desconectado com Sucesso'
+			self.gui_set_bt_status('Conectar')
+			self.gui_set_status('Desconectado com Sucesso')
 		except:
-			print 'Não foi possível desconectar'
+			self.gui_set_status('Não foi possível desconectar')
 	    	self.disconnect = False
 GraphicalUserInterface().execute(enable_tasks=True)
