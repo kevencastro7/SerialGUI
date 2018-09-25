@@ -28,6 +28,8 @@ class GraphicalUserInterface(MicroServiceBase):
 	self.connect = False
 	self.conectado = False
 	self.disconnect = False
+	self.line = ['line1','line2','line3','line4','line5','line6']
+	self.topLine = 0
         """ LOAD ALL OBJECTS """
         self.gtk_builder = Gtk.Builder()
         self.gtk_builder.add_from_file('interface.glade')
@@ -59,6 +61,14 @@ class GraphicalUserInterface(MicroServiceBase):
     def main_quit(self, arg1=None, arg2=None):
         Gtk.main_quit()
         self.exit()
+
+    def get_buff(self,L):
+	return self.app_objects[self.line[L]].get_text()
+
+    def write_line(self,text):
+	for i in range(4,-1,-1):
+	    self.gui_set_line(self.get_buff(i),i+1)
+	self.gui_set_line(text,0)
 
     """#############################################################################################################"""
     """############################################### GUI HANDLERS ################################################"""
@@ -96,6 +106,14 @@ class GraphicalUserInterface(MicroServiceBase):
     def gui_clear_msg(self):
         self.app_objects['msg'].set_text('')
 
+    @gtk_thread_safe
+    def gui_set_line(self, text,L):
+        self.app_objects[self.line[L]].set_text(text)
+
+    @gtk_thread_safe
+    def gui_clear_line(self, line):
+        self.app_objects['read'].set_text('')
+
 
     """#############################################################################################################"""
     """################################################### TASKS  ##################################################"""
@@ -113,7 +131,7 @@ class GraphicalUserInterface(MicroServiceBase):
 			print self.app_objects['host'].get_text() 
 			self.ser = serial.Serial(
 			       	port=self.app_objects['host'].get_text() ,
-			       	baudrate = 9600,
+			       	baudrate = 115200,
 			       	parity=serial.PARITY_NONE,
 			       	stopbits=serial.STOPBITS_ONE,
 			       	bytesize=serial.EIGHTBITS,
@@ -135,4 +153,12 @@ class GraphicalUserInterface(MicroServiceBase):
 		except:
 			print 'Não foi possível desconectar'
 	    	self.disconnect = False
+
+    @MicroServiceBase.task
+    def SerialRead(self):
+        while True:
+		while self.conectado:
+			x=self.ser.readline()
+			if x:
+				self.write_line(x)
 GraphicalUserInterface().execute(enable_tasks=True)
