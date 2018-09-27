@@ -8,10 +8,14 @@ import notify2
 import signal
 import gi
 import serial
+import time
 gi.require_version('Gtk', '3.0')
 gi.require_version('Notify', '0.7')
 from gi.repository import Gtk, GObject, Gdk, Notify
 from fase import MicroServiceBase
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_gtk3cairo import FigureCanvasGTK3Cairo as FigureCanvas
 
 def gtk_thread_safe(gtk_user_function):
     def thread_safe_wrapper(*args):
@@ -70,6 +74,49 @@ class GraphicalUserInterface(MicroServiceBase):
 	    self.gui_set_line(self.get_buff(i),i+1)
 	self.gui_set_line(text,0)
 
+    def serialRead(self):
+	while self.conectado:
+		try:
+			x = int(self.ser.read(1))
+		except:
+			x = 0
+		if x == 1:
+			n = self.ser.read(1)
+			x = self.ser.read(int(n))
+			self.write_line(x)
+			self.updateSamples(int(x))
+			del n
+		del x
+
+    def calcutator(self):
+	fig, ax = plt.subplots()
+	ax.plot(self.axisX, self.axisY)
+
+	ax.set(xlabel='samples', ylabel='ADC',
+	       title='ADC')
+	ax.grid()
+	plt.ylim(0, 4100) 
+	fig.savefig("test.png")
+	canvas = FigureCanvas(fig)
+	#canvas.set_size_request(400,400)
+	self.gui_set_plot(canvas)
+	plt.cla()
+	plt.clf()
+	plt.close(fig)
+	del fig, ax
+	
+    def initGraph(self):
+	self.axisX = []
+	self.axisY = []
+	for i in range(0,100):
+		self.axisX.append(i)
+		self.axisY.append(0)
+
+    def updateSamples(self,new_value):
+	for i in range(99,0,-1):
+	    self.axisY[i] = self.axisY[i-1]
+	self.axisY[0] = new_value
+
     """#############################################################################################################"""
     """############################################### GUI HANDLERS ################################################"""
     """#############################################################################################################"""
@@ -114,6 +161,21 @@ class GraphicalUserInterface(MicroServiceBase):
     def gui_clear_line(self, line):
         self.app_objects['read'].set_text('')
 
+    @gtk_thread_safe
+    def gui_set_image(self):
+	self.app_objects['image'].clear
+	self.app_objects['image'].set_from_file('test.png')
+
+    @gtk_thread_safe
+    def gui_set_plot(self,canvas):
+	self.gui_clear_plot()
+	self.app_objects['plot'].add_with_viewport(canvas)	
+
+    @gtk_thread_safe
+    def gui_clear_plot(self):
+	self.app_objects['plot'].remove(self.app_objects['plot'].get_child())
+
+
 
     """#############################################################################################################"""
     """################################################### TASKS  ##################################################"""
@@ -123,7 +185,7 @@ class GraphicalUserInterface(MicroServiceBase):
         Gtk.main()
 
     @MicroServiceBase.task
-    def Serial(self):
+    def TaskConect(self):
 	while True:
 	    if self.connect:
 
@@ -153,12 +215,38 @@ class GraphicalUserInterface(MicroServiceBase):
 		except:
 			print 'Não foi possível desconectar'
 	    	self.disconnect = False
-
+    """
     @MicroServiceBase.task
     def SerialRead(self):
         while True:
 		while self.conectado:
-			x=self.ser.readline()
+			time.sleep(0.1)
+        		n = self.ser.inWaiting()
+			x = self.ser.read(1)
 			if x:
-				self.write_line(x)
+				self.write_line(str(x))
+				print str(x)
+    """
+
+    @MicroServiceBase.task
+    def TaskRead(self):
+        while True:
+		self.serialRead()
+
+    @MicroServiceBase.task
+    def UpdateImg(self):
+	while True:
+		while self.conectado:
+			self.gui_set_image()
+			time.sleep(0.2)
+
+    @MicroServiceBase.task
+    def CalcImg(self):
+	self.initGraph()
+	while True:
+		while self.conectado:
+			self.calcutator()
+			time.sleep(0.05)
+
+   
 GraphicalUserInterface().execute(enable_tasks=True)
