@@ -15,7 +15,8 @@ from gi.repository import Gtk, GObject, Gdk, Notify
 from fase import MicroServiceBase
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_gtk3cairo import FigureCanvasGTK3Cairo as FigureCanvas
+import timeit
+
 
 def gtk_thread_safe(gtk_user_function):
     def thread_safe_wrapper(*args):
@@ -32,8 +33,11 @@ class GraphicalUserInterface(MicroServiceBase):
 	self.connect = False
 	self.conectado = False
 	self.disconnect = False
-	self.line = ['line1','line2','line3','line4','line5','line6']
+	self.update = False
+	self.samples = 1004	
 	self.topLine = 0
+	self.novasamostras = 4
+
         """ LOAD ALL OBJECTS """
         self.gtk_builder = Gtk.Builder()
         self.gtk_builder.add_from_file('interface.glade')
@@ -44,6 +48,7 @@ class GraphicalUserInterface(MicroServiceBase):
         self.app_objects['MAIN_WINDOW'].set_title("Serial")
         self.app_objects['MAIN_WINDOW'].connect("delete-event", self.main_quit)
         self.app_objects['MAIN_WINDOW'].show()
+	self.buffer = []
 
         # handlers
         self.handlers = {
@@ -66,40 +71,39 @@ class GraphicalUserInterface(MicroServiceBase):
         Gtk.main_quit()
         self.exit()
 
-    def get_buff(self,L):
-	return self.app_objects[self.line[L]].get_text()
-
-    def write_line(self,text):
-	for i in range(4,-1,-1):
-	    self.gui_set_line(self.get_buff(i),i+1)
-	self.gui_set_line(text,0)
 
     def serialRead(self):
 	while self.conectado:
 		try:
-			x = int(self.ser.read(1))
+
+			x = self.ser.read(1)
 		except:
 			x = 0
-		if x == 1:
-			n = self.ser.read(1)
-			x = self.ser.read(int(n))
-			self.write_line(x)
-			self.updateSamples(int(x))
+		if x == '|':
+			try:
+				n = ord(self.ser.read(1))
+			except:
+				break
+			try:
+				for i in range(1,int(n)+1):
+					self.buffer.append(ord(self.ser.read(1)))
+				self.ser.flushInput()
+			except:
+				break
+			self.update = True
+			print self.buffer
 			del n
 		del x
 
-    def calcutator(self):
+    def calculator(self):
 	fig, ax = plt.subplots()
-	ax.plot(self.axisX, self.axisY)
+	ax.plot(self.axisX[1:self.samples-self.novasamostras], self.axisY[1:self.samples-self.novasamostras])
 
-	ax.set(xlabel='samples', ylabel='ADC',
+	ax.set(xlabel='samples', ylabel='Tensao(V)',
 	       title='ADC')
 	ax.grid()
-	plt.ylim(0, 4100) 
+	plt.ylim(-1.5, 1.5) 
 	fig.savefig("test.png")
-	canvas = FigureCanvas(fig)
-	#canvas.set_size_request(400,400)
-	self.gui_set_plot(canvas)
 	plt.cla()
 	plt.clf()
 	plt.close(fig)
@@ -108,14 +112,20 @@ class GraphicalUserInterface(MicroServiceBase):
     def initGraph(self):
 	self.axisX = []
 	self.axisY = []
-	for i in range(0,100):
+	for i in range(0,self.samples):
 		self.axisX.append(i)
-		self.axisY.append(0)
+		self.axisY.append(0.0)
 
-    def updateSamples(self,new_value):
-	for i in range(99,0,-1):
-	    self.axisY[i] = self.axisY[i-1]
-	self.axisY[0] = new_value
+    def updateSamples(self):
+	buffers = self.buffer
+	self.buffer = []
+	self.novasamostras = len(buffers)
+	for i in range(1,self.samples-self.novasamostras):
+	    self.axisY[i] = self.axisY[i+1]
+	for i in range(0,self.novasamostras):
+	    self.axisY[self.samples-(4-i)] = (int(buffers[i])-45)/30.0
+
+	
 
     """#############################################################################################################"""
     """############################################### GUI HANDLERS ################################################"""
@@ -123,6 +133,7 @@ class GraphicalUserInterface(MicroServiceBase):
 
     def bt_sair(self, button):
         self.main_quit()
+
 
     def bt_conectar(self, button):
 	if self.conectado:
@@ -154,26 +165,9 @@ class GraphicalUserInterface(MicroServiceBase):
         self.app_objects['msg'].set_text('')
 
     @gtk_thread_safe
-    def gui_set_line(self, text,L):
-        self.app_objects[self.line[L]].set_text(text)
-
-    @gtk_thread_safe
-    def gui_clear_line(self, line):
-        self.app_objects['read'].set_text('')
-
-    @gtk_thread_safe
     def gui_set_image(self):
 	self.app_objects['image'].clear
 	self.app_objects['image'].set_from_file('test.png')
-
-    @gtk_thread_safe
-    def gui_set_plot(self,canvas):
-	self.gui_clear_plot()
-	self.app_objects['plot'].add_with_viewport(canvas)	
-
-    @gtk_thread_safe
-    def gui_clear_plot(self):
-	self.app_objects['plot'].remove(self.app_objects['plot'].get_child())
 
 
 
@@ -197,8 +191,10 @@ class GraphicalUserInterface(MicroServiceBase):
 			       	parity=serial.PARITY_NONE,
 			       	stopbits=serial.STOPBITS_ONE,
 			       	bytesize=serial.EIGHTBITS,
-			       	timeout=1
+			       	timeout=10
 			   	)
+			self.ser.flushInput()
+			self.ser.flushOutput()
 			#self.ser.open()
 			self.conectado = True
 			self.gui_set_status('Desconectar')
@@ -215,38 +211,39 @@ class GraphicalUserInterface(MicroServiceBase):
 		except:
 			print 'Não foi possível desconectar'
 	    	self.disconnect = False
-    """
-    @MicroServiceBase.task
-    def SerialRead(self):
-        while True:
-		while self.conectado:
-			time.sleep(0.1)
-        		n = self.ser.inWaiting()
-			x = self.ser.read(1)
-			if x:
-				self.write_line(str(x))
-				print str(x)
-    """
 
     @MicroServiceBase.task
     def TaskRead(self):
+        self.initGraph()
         while True:
 		self.serialRead()
-
+    '''
     @MicroServiceBase.task
     def UpdateImg(self):
 	while True:
 		while self.conectado:
 			self.gui_set_image()
 			time.sleep(0.2)
-
+    '''
     @MicroServiceBase.task
     def CalcImg(self):
 	self.initGraph()
+	self.calculator()
+	self.gui_set_image()
 	while True:
 		while self.conectado:
-			self.calcutator()
+			self.calculator()
+			self.gui_set_image()
 			time.sleep(0.05)
+    @MicroServiceBase.task
+    def HandleUpdate(self):
+	while True:
+		while self.update:
+			try:
+				self.updateSamples()
+			except:
+				pass
+			self.update = False
 
-   
+     
 GraphicalUserInterface().execute(enable_tasks=True)
